@@ -1082,6 +1082,31 @@ function readingHtml(n,d){
   }
   return html+'</div>';
 }
+function morphInto(el,html){
+  if(!el)return;
+  const tpl=document.createElement('template');tpl.innerHTML=html;
+  morphChildren(el,tpl.content);
+}
+function morphChildren(from,to){
+  const fc=Array.from(from.childNodes),tc=Array.from(to.childNodes);
+  for(let i=0;i<tc.length;i++){
+    if(i<fc.length)morphNode(fc[i],tc[i]);else from.appendChild(tc[i]);
+  }
+  for(let i=tc.length;i<fc.length;i++)fc[i].remove();
+}
+function morphNode(a,b){
+  if(a.nodeType!==b.nodeType||a.nodeName!==b.nodeName){a.replaceWith(b);return}
+  if(a.nodeType===3||a.nodeType===8){if(a.nodeValue!==b.nodeValue)a.nodeValue=b.nodeValue;return}
+  if(a.nodeType!==1)return;
+  for(const at of Array.from(a.attributes))if(!b.hasAttribute(at.name))a.removeAttribute(at.name);
+  for(const at of Array.from(b.attributes))if(a.getAttribute(at.name)!==at.value)a.setAttribute(at.name,at.value);
+  if(a.nodeName==='INPUT'){
+    if(a.type==='checkbox'||a.type==='radio'){a.checked=b.hasAttribute('checked');return}
+    const v=b.getAttribute('value')||'';if(a.value!==v)a.value=v;return;
+  }
+  if(a.nodeName==='TEXTAREA'){const v=b.textContent;if(a.value!==v)a.value=v;return}
+  morphChildren(a,b);
+}
 function restoreResultScroll(prev){
   const area=document.querySelector('#station .result-area');if(!area)return;
   const k=state._scrollToResult;state._scrollToResult=null;
@@ -1367,14 +1392,14 @@ function renderOsceTetaniHome(){
   const list=osceFolderCases('Tetani');
   document.getElementById('home').innerHTML=`<header class="home-header"><div class="logo">OSCE<span>Pro</span></div><div class="stats"><span>Hoca: <b>Hasan Esat Hoca</b></span><span>Klasör: <b>Tetani</b></span><span>Vaka: <b>${list.length}</b></span></div></header><div class="portal-back"><button class="ghost" onclick="openHasanEsatHocaOsce()">← Hasan Esat Hoca Klasörüne Dön</button></div><section class="hero"><h1>Tetani</h1><p>Hipoparatiroidi, D vitamini eksikliği, KBY, elektrolit bozuklukları ve tetanoz ön tanılarıyla hazırlanmış Dahiliye OSCE simülasyon vakaları. Laboratuvarlar mevcut OSCEPro ana tetkik adlarının içine yerleştirilmiştir.</p></section>${osceFolderCaseGrid(list)}`;
 }
-function startCase(id){const c=CASES.find(x=>x.id===id);state={...state,case:c,activeTab:'anamnez',hideQuestions:true,showCriticalLabs:false,showCriticalImaging:false,asked:[],chat:[{role:'system',text:'İstasyon başladı.'}],examDone:[],labsSelected:[],labsDone:[],imagingSelected:[],imagingDone:[],dxText:'',finalDxText:'',planText:'',timeLeft:c.duration*60,timerOn:false};if(state.timerId)clearInterval(state.timerId);showScreen('station');renderStation()}function calcScore(){const c=state.case;let score=0,total=0,met=[],missed=[],crit=[];c.required.questions.forEach(id=>{total+=3;const q=c.questions.find(x=>x.id===id);if(state.asked.includes(id)){score+=3;met.push('Anamnez: '+(q?.q||id))}else{missed.push('Anamnez eksik: '+(q?.q||id));if(q?.critical)crit.push(q.q)}});c.required.exam.forEach(n=>{total+=4;if(state.examDone.includes(n)){score+=4;met.push('Muayene: '+n)}else{missed.push('Muayene eksik: '+n);if(c.exam[n]?.critical)crit.push(n)}});c.required.labs.forEach(n=>{total+=4;if(state.labsDone.includes(n)){score+=4;met.push('Lab: '+n)}else{missed.push('Lab eksik: '+n);if(c.labs[n]?.critical)crit.push(n)}});c.required.imaging.forEach(n=>{total+=4;if(state.imagingDone.includes(n)){score+=4;met.push('Görüntüleme: '+n)}else missed.push('Görüntüleme eksik: '+n)});[['Ön tanı',state.dxText,c.dxKeywords],['Kesin tanı',state.finalDxText,c.finalKeywords],['Tedavi planı',state.planText,c.planKeywords]].forEach(([label,text,groups])=>{const t=norm(text);groups.forEach(([name,keys,pts])=>{total+=pts;if(keys.some(k=>t.includes(norm(k)))){score+=pts;met.push(label+': '+name)}else missed.push(label+' eksik: '+name)})});return{score,total,pct:total?Math.round(score/total*100):0,met,missed,crit}}function renderStation(){const c=state.case, r=calcScore();const prevY=window.scrollY||0;const prevSide=document.querySelector('#station .side-list')?.scrollTop||0;const prevRes=document.querySelector('#station .result-area')?.scrollTop||0;document.getElementById('station').innerHTML=`<header class="station-header"><button class="ghost" onclick="goHome()">← Geri</button><h1>${casePublicTitle(c)}</h1><div class="timer ${state.timeLeft<=60?'urgent':''}">${fmt(state.timeLeft)}</div><button class="ghost" onclick="toggleTimer()">${state.timerOn?'⏸ Durdur':'▶ Başlat'}</button><button class="primary" onclick="finish()">Puanla</button></header>${progressHtml(r)}<nav class="tab-nav">${TABS.map(([id,label])=>`<button class="${state.activeTab===id?'active':''}" onclick="switchTab('${id}')">${label}</button>`).join('')}</nav><section class="tab-body">${tabHtml()}</section>`;setTimeout(()=>{const side=document.querySelector('#station .side-list');if(side)side.scrollTop=prevSide;const box=document.getElementById('chatMessages');if(box)box.scrollTop=box.scrollHeight;if(state.activeTab==='labs'&&state._labKeepBottom){keepLabAtBottom();state._labKeepBottom=false;}window.scrollTo(0,prevY);restoreResultScroll(prevRes);},0)}
+function startCase(id){const c=CASES.find(x=>x.id===id);state={...state,case:c,activeTab:'anamnez',hideQuestions:true,showCriticalLabs:false,showCriticalImaging:false,asked:[],chat:[{role:'system',text:'İstasyon başladı.'}],examDone:[],labsSelected:[],labsDone:[],imagingSelected:[],imagingDone:[],dxText:'',finalDxText:'',planText:'',timeLeft:c.duration*60,timerOn:false};if(state.timerId)clearInterval(state.timerId);showScreen('station');renderStation()}function calcScore(){const c=state.case;let score=0,total=0,met=[],missed=[],crit=[];c.required.questions.forEach(id=>{total+=3;const q=c.questions.find(x=>x.id===id);if(state.asked.includes(id)){score+=3;met.push('Anamnez: '+(q?.q||id))}else{missed.push('Anamnez eksik: '+(q?.q||id));if(q?.critical)crit.push(q.q)}});c.required.exam.forEach(n=>{total+=4;if(state.examDone.includes(n)){score+=4;met.push('Muayene: '+n)}else{missed.push('Muayene eksik: '+n);if(c.exam[n]?.critical)crit.push(n)}});c.required.labs.forEach(n=>{total+=4;if(state.labsDone.includes(n)){score+=4;met.push('Lab: '+n)}else{missed.push('Lab eksik: '+n);if(c.labs[n]?.critical)crit.push(n)}});c.required.imaging.forEach(n=>{total+=4;if(state.imagingDone.includes(n)){score+=4;met.push('Görüntüleme: '+n)}else missed.push('Görüntüleme eksik: '+n)});[['Ön tanı',state.dxText,c.dxKeywords],['Kesin tanı',state.finalDxText,c.finalKeywords],['Tedavi planı',state.planText,c.planKeywords]].forEach(([label,text,groups])=>{const t=norm(text);groups.forEach(([name,keys,pts])=>{total+=pts;if(keys.some(k=>t.includes(norm(k)))){score+=pts;met.push(label+': '+name)}else missed.push(label+' eksik: '+name)})});return{score,total,pct:total?Math.round(score/total*100):0,met,missed,crit}}function renderStation(){const c=state.case, r=calcScore();const prevY=window.scrollY||0;const prevSide=document.querySelector('#station .side-list')?.scrollTop||0;const prevRes=document.querySelector('#station .result-area')?.scrollTop||0;morphInto(document.getElementById('station'),`<header class="station-header"><button class="ghost" onclick="goHome()">← Geri</button><h1>${casePublicTitle(c)}</h1><div class="timer ${state.timeLeft<=60?'urgent':''}">${fmt(state.timeLeft)}</div><button class="ghost" onclick="toggleTimer()">${state.timerOn?'⏸ Durdur':'▶ Başlat'}</button><button class="primary" onclick="finish()">Puanla</button></header>${progressHtml(r)}<nav class="tab-nav">${TABS.map(([id,label])=>`<button class="${state.activeTab===id?'active':''}" onclick="switchTab('${id}')">${label}</button>`).join('')}</nav><section class="tab-body">${tabHtml()}</section>`);setTimeout(()=>{const side=document.querySelector('#station .side-list');if(side)side.scrollTop=prevSide;const box=document.getElementById('chatMessages');if(box)box.scrollTop=box.scrollHeight;if(state.activeTab==='labs'&&state._labKeepBottom){keepLabAtBottom();state._labKeepBottom=false;}window.scrollTo(0,prevY);restoreResultScroll(prevRes);},0)}
 function renderActiveTabOnly(){
   const body=document.querySelector('#station .tab-body');
   if(!body){renderStation();return;}
   const prevSide=document.querySelector('#station .side-list')?.scrollTop||0;
   const prevRes=document.querySelector('#station .result-area')?.scrollTop||0;
   const prevActive=document.activeElement&&document.activeElement.id;
-  body.innerHTML=tabHtml();
+  morphInto(body,tabHtml());
   setTimeout(()=>{
     const side=document.querySelector('#station .side-list');
     if(side)side.scrollTop=prevSide;
@@ -2459,10 +2484,10 @@ renderHome();
 })();
 </script>
 
-<div class="version-badge">OSCEPro station-start-v17.57 / kardiyoloji-gercek-goruntu-yorum</div>
+<div class="version-badge">OSCEPro station-start-v17.58 / kardiyoloji-gercek-goruntu-yorum</div>
 <script>
 (function(){
-  window.OSCEPRO_VERSION = "station-start-v17.57";
+  window.OSCEPRO_VERSION = "station-start-v17.58";
   async function clearOldOsceCaches(){
     try{
       if('serviceWorker' in navigator){
@@ -2475,9 +2500,9 @@ renderHome();
       }
       localStorage.removeItem('osce_offline_ready_station_start_v16');
       localStorage.removeItem('osce_offline_ready_station_start_v16_5');
-      console.log('[OSCEPro v17.57] Eski service worker/cache temizlendi.');
+      console.log('[OSCEPro v17.58] Eski service worker/cache temizlendi.');
     }catch(e){
-      console.warn('[OSCEPro v17.57] Cache temizleme uyarısı:', e);
+      console.warn('[OSCEPro v17.58] Cache temizleme uyarısı:', e);
     }
   }
   window.addEventListener('load', () => setTimeout(clearOldOsceCaches, 400));
